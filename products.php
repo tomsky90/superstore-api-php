@@ -1,76 +1,58 @@
 <?php
-// CORS headers
+
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header('Content-Type: application/json');
-
-// Handle OPTIONS request (preflight)
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-  http_response_code(200);
-  exit;
-}
-
-// Include your database connection file
+// CORS headers, DB connection, etc.
 include 'db.php';
 
-// Your existing query logic
-$category = isset($_GET['category']) ? $_GET['category'] : null;
-$is_featured = isset($_GET['is_featured']) ? $_GET['is_featured'] : null;
-$is_trending = isset($_GET['is_trending']) ? $_GET['is_trending'] : null;
-$sort = isset($_GET['sort']) ? $_GET['sort'] : null;
+// Check if the category parameter is provided
+$category_name = isset($_GET['category']) ? $_GET['category'] : null;
 
-// Construct SQL Query
-$sql = "
-    SELECT p.id, 
-           p.name AS product_name, 
-           p.is_new, 
-           p.is_trending, 
-           p.price, 
-           p.img, 
-           p.img2,
-           c.name AS category_name
-    FROM products p
-    JOIN subcategories s ON p.subcategory_id = s.id
-    JOIN subcategory_category sc ON s.id = sc.subcategory_id
-    JOIN categories c ON sc.category_id = c.id
-    WHERE 1 = 1
-";
+// Initialize category_id
+$category_id = null;
 
-// Apply category filter
-if ($category) {
-  $sql .= " AND c.name = :category";
+// If a category name is provided, get the category ID
+if ($category_name) {
+  $category_sql = "SELECT id FROM categories WHERE name = :category_name";
+  $category_stmt = $pdo->prepare($category_sql);
+  $category_stmt->bindParam(':category_name', $category_name);
+  $category_stmt->execute();
+  $category = $category_stmt->fetch(PDO::FETCH_ASSOC);
+
+  // Check if category exists
+  if ($category) {
+    $category_id = $category['id'];
+  } else {
+    // If category name is invalid, return an empty array
+    echo json_encode([]);
+    exit;
+  }
 }
 
-// Apply is_featured filter
-if ($is_featured) {
-  $sql .= " AND p.is_featured = 1";
+// Base SQL query to fetch products
+$sql = "SELECT p.id, p.name AS product_name, p.price, p.img, p.img2, c.name AS category_name
+        FROM products p
+        JOIN categories c ON p.category_id = c.id
+        WHERE 1 = 1";
+
+// Apply category filter if a valid category ID is present
+if ($category_id) {
+  $sql .= " AND p.category_id = :category_id";
 }
 
-if ($is_trending) {
-  $sql .= " AND p.is_trending = 1";
-}
-
-// Sorting logic
-if ($sort) {
-  $sort_parts = explode(":", $sort);
-  $sort_field = $sort_parts[0];
-  $sort_direction = strtoupper($sort_parts[1]);
-  $sql .= " ORDER BY p.$sort_field $sort_direction";
-}
-
-// Grouping to avoid duplicates (optional)
-$sql .= " GROUP BY p.id"; // Ensures unique product IDs
-
+// Prepare and execute the query
 $stmt = $pdo->prepare($sql);
 
-// Bind category if provided
-if ($category) {
-  $stmt->bindParam(':category', $category);
+// Bind category ID if provided
+if ($category_id) {
+  $stmt->bindParam(':category_id', $category_id);
 }
 
 $stmt->execute();
-$products = $stmt->fetchAll(PDO::FETCH_ASSOC); // Fetch unique products
+$products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-echo json_encode($products); // Return data as JSON
+// Return the products as a JSON response
+echo json_encode($products);
 ?>
