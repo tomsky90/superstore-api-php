@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include 'db.php';
 
-$sql = "SELECT name from subcategories where 1=1";
+$sql = "SELECT * from subcategories ";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute();

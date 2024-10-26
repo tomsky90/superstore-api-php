@@ -9,78 +9,69 @@ include 'db.php'; // Include your DB connection
 
 // Get query parameters
 $category_name = isset($_GET['category']) ? $_GET['category'] : null;
-$subcategories = isset($_GET['subcategories']) ? $_GET['subcategories'] : [];
-$max_price = isset($_GET['max_price']) ? (float) $_GET['max_price'] : null; // Cast to float
+$subcategory_ids = isset($_GET['subcategories']) ? $_GET['subcategories'] : []; // Array of subcategory IDs
+$max_price = isset($_GET['max_price']) ? (float) $_GET['max_price'] : null;
 $sort = isset($_GET['sort']) ? $_GET['sort'] : null;
 
-// Log the input values
+// Parse `is_featured` and `is_trending` as booleans from the query params
+$featured = isset($_GET['is_featured']) ? (bool) $_GET['is_featured'] : null;
+$trending = isset($_GET['is_trending']) ? (bool) $_GET['is_trending'] : null;
+
+// Log the input values for debugging
 error_log("Category Name: " . print_r($category_name, true));
-error_log("Subcategories: " . print_r($subcategories, true));
+error_log("Subcategory IDs: " . print_r($subcategory_ids, true));
 error_log("Max Price: " . print_r($max_price, true));
 error_log("Sort: " . print_r($sort, true));
+error_log("Featured: " . print_r($featured, true));
+error_log("Trending: " . print_r($trending, true));
 
 // Initialize bind parameters
 $bindParams = [];
 
-// Base SQL query to fetch products
-$sql = "SELECT p.id, p.name AS product_name, p.price, p.img, p.img2, c.name AS category_name
+// Base SQL query to fetch products, now including `is_new`
+$sql = "SELECT p.id, p.name AS product_name, p.price, p.img, p.img2, p.is_new, c.name AS category_name
         FROM products p
         JOIN categories c ON p.category_id = c.id
         WHERE 1 = 1";
 
-// If a category name is provided, fetch the corresponding category ID
+// Apply category filter if provided
 if ($category_name) {
-  $sql .= " AND c.name = ?";  // Use positional placeholder for category name
-  $bindParams[] = $category_name;  // Add to bind parameters
+  $sql .= " AND c.name = ?";
+  $bindParams[] = $category_name;
 }
 
-// Convert subcategory names to IDs (if names are passed)
-$subcategory_ids = [];
-if (!empty($subcategories)) {
-  // Prepare to fetch subcategory IDs
-  $subcategory_placeholders = implode(',', array_fill(0, count($subcategories), '?'));
-  $subcategory_sql = "SELECT id FROM subcategories WHERE name IN ($subcategory_placeholders)";
-
-  // Prepare and execute the query to get subcategory IDs
-  $subcategory_stmt = $pdo->prepare($subcategory_sql);
-  $subcategory_stmt->execute($subcategories); // Execute with the subcategory names
-  $subcategory_ids = $subcategory_stmt->fetchAll(PDO::FETCH_COLUMN); // Fetch IDs
-
-  // Log fetched subcategory IDs
-  error_log("Fetched Subcategory IDs: " . print_r($subcategory_ids, true));
-
-  // If no valid subcategory IDs were found, return empty
-  if (empty($subcategory_ids)) {
-    echo json_encode([]);
-    exit;
-  }
-
-  // Add subcategory ID filter to the main query
+// Apply subcategory filter by IDs if provided
+if (!empty($subcategory_ids)) {
   $subcategory_placeholder_ids = implode(',', array_fill(0, count($subcategory_ids), '?'));
   $sql .= " AND p.subcategory_id IN ($subcategory_placeholder_ids)";
-
-  // Merge subcategory IDs into bindParams
   $bindParams = array_merge($bindParams, $subcategory_ids);
 }
 
 // Apply max price filter if provided
-if ($max_price !== null) { // Check explicitly against null
+if ($max_price !== null) {
   $sql .= " AND p.price <= ?";
-  $bindParams[] = $max_price; // Add max price to bind parameters
+  $bindParams[] = $max_price;
+}
+
+// Apply featured filter if requested
+if ($featured === true) {
+  $sql .= " AND p.is_featured = 1";
+}
+
+// Apply trending filter if requested
+if ($trending === true) {
+  $sql .= " AND p.is_trending = 1";
 }
 
 // Apply sorting
-if ($sort && in_array(strtolower($sort), ['asc', 'desc'])) {
-  $sql .= " ORDER BY p.price " . strtoupper($sort);
-} else {
-  $sql .= " ORDER BY p.id ASC";
-}
+$sort_order = strtolower($sort) === 'desc' ? 'DESC' : 'ASC';
+$sql .= " ORDER BY p.price $sort_order";
 
 // Debug: Log the final SQL and bind parameters
 error_log("Final SQL: $sql");
 error_log("Bind Params: " . json_encode($bindParams));
 
-// Prepare and execute the query
+// Prepare and execute the main query
 $stmt = $pdo->prepare($sql);
 
 // Bind positional parameters
@@ -92,5 +83,7 @@ foreach ($bindParams as $index => $value) {
 $stmt->execute();
 $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Return the products as a JSON response
+// Return the products as a JSON response, including `is_new`
 echo json_encode($products);
+
+?>
